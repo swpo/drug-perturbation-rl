@@ -9,6 +9,7 @@
     >
     <title>Excursions in Biology</title>
     <link rel="stylesheet" href="styles.css">
+    <script src="footnotes.js" defer></script>
   </head>
   <body>
     <main class="page-shell">
@@ -384,18 +385,36 @@ Wrap your answer in &lt;STRESS&gt;...&lt;/STRESS&gt;.</code></pre>
             tool effectively. The final run spanned 4 curriculum stages and the final refresh stage.
           </p>
 
-          <div class="table-wrap table-wrap-wide">
-            <table>
-              <caption class="sr-only">Curriculum stages and training-step ranges</caption>
-              <thead>
-                <tr><th scope="col">Stage</th><th scope="col" class="numeric">1</th><th scope="col" class="numeric">2</th><th scope="col" class="numeric">3</th><th scope="col" class="numeric">4</th><th scope="col" class="numeric">5</th></tr>
-              </thead>
-              <tbody>
-                <tr><th scope="row">Primary content</th><td>Target gene</td><td>MoA</td><td>Pathway</td><td>Phenotype</td><td>Full chain</td></tr>
-                <tr><th scope="row">Steps</th><td class="numeric">0-80</td><td class="numeric">80-120</td><td class="numeric">120-160</td><td class="numeric">160-200</td><td class="numeric">200-250</td></tr>
-              </tbody>
-            </table>
-          </div>
+          <figure class="curriculum-figure">
+            <figcaption class="sr-only">Five-stage curriculum and training-step ranges</figcaption>
+            <ol class="curriculum-timeline">
+              <li class="curriculum-stage">
+                <span class="stage-number">Stage 1</span>
+                <strong>Target gene</strong>
+                <span class="stage-range">Steps 0-80</span>
+              </li>
+              <li class="curriculum-stage">
+                <span class="stage-number">Stage 2</span>
+                <strong>MoA</strong>
+                <span class="stage-range">Steps 80-120</span>
+              </li>
+              <li class="curriculum-stage">
+                <span class="stage-number">Stage 3</span>
+                <strong>Pathway</strong>
+                <span class="stage-range">Steps 120-160</span>
+              </li>
+              <li class="curriculum-stage">
+                <span class="stage-number">Stage 4</span>
+                <strong>Phenotype</strong>
+                <span class="stage-range">Steps 160-200</span>
+              </li>
+              <li class="curriculum-stage">
+                <span class="stage-number">Stage 5</span>
+                <strong>Full chain</strong>
+                <span class="stage-range">Steps 200-250</span>
+              </li>
+            </ol>
+          </figure>
 
           <p>Results from the full curriculum run compared to the control are below.</p>
 
@@ -429,7 +448,13 @@ Wrap your answer in &lt;STRESS&gt;...&lt;/STRESS&gt;.</code></pre>
             model size, frontier models generalize to the new tasks), and open models can be fine-tuned to
             perform well on those tasks. The agents can not only run experiments, but devise new
             hypotheses and run something I’d call accelerated rather than auto-research, since some
-            feedback still seems helpful.<sup class="footnote-ref"><a href="#footnote-1" id="footnote-ref-1" aria-label="Footnote 1">1</a></sup>
+            feedback still seems helpful.<span class="inline-footnote"><button
+              type="button"
+              class="footnote-trigger"
+              aria-expanded="false"
+              aria-controls="footnote-1"
+              aria-label="Footnote 1: Most of this work was done with Claude Code (Opus 4.7/4.8) and Codex (GPT-5.5)."
+            ><sup>1</sup></button><span class="footnote-popover" id="footnote-1" role="note">Most of this work was done with Claude Code (Opus 4.7/4.8) and Codex (GPT-5.5).</span></span>
             I found that an important part of the accelerated research loop is
             the occasional debrief to cover any gotchas. In this case there were a couple.
           </p>
@@ -536,15 +561,6 @@ Wrap your answer in &lt;STRESS&gt;...&lt;/STRESS&gt;.</code></pre>
             generate. This optimization should itself be done collaboratively by humans and agents.
           </p>
         </section>
-
-        <aside class="footnotes" aria-label="Footnotes">
-          <ol>
-            <li id="footnote-1">
-              Most of this work was done with Claude Code (Opus 4.7/4.8) and Codex (GPT-5.5).
-              <a href="#footnote-ref-1" class="footnote-back" aria-label="Back to footnote reference">↩</a>
-            </li>
-          </ol>
-        </aside>
 
         <section>
           <h2>Credit</h2>

@@ -181,6 +181,59 @@ td strong {
   font-weight: 750;
 }
 
+.curriculum-figure {
+  margin: 2.25rem 0 2.55rem;
+}
+
+.curriculum-timeline {
+  display: grid;
+  grid-template-columns: 80fr 40fr 40fr 40fr 50fr;
+  gap: 3px;
+  margin: 0;
+  padding: 3px;
+  overflow: hidden;
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  background: var(--rule);
+  box-shadow: 0 6px 20px rgba(49, 57, 52, 0.04);
+  list-style: none;
+}
+
+.curriculum-stage {
+  display: flex;
+  min-width: 0;
+  min-height: 126px;
+  padding: 1rem 0.9rem 0.85rem;
+  flex-direction: column;
+  background: #f4f7f5;
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1.25;
+}
+
+.curriculum-stage:nth-child(even) {
+  background: #eaf0ee;
+}
+
+.curriculum-stage strong {
+  margin: auto 0 0.6rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.stage-number,
+.stage-range {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.stage-range {
+  white-space: nowrap;
+}
+
 pre {
   width: 100%;
   margin: 2rem 0 2.35rem;
@@ -227,27 +280,81 @@ pre code {
   color: var(--code-comment);
 }
 
-.footnote-ref {
+.inline-footnote {
+  position: relative;
+  display: inline-block;
   font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  line-height: 1;
+}
+
+.footnote-trigger {
+  margin: 0 0.05em;
+  padding: 0 0.13em;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--link);
+  font: inherit;
+  cursor: pointer;
+}
+
+.footnote-trigger sup {
   font-size: 0.66em;
-  line-height: 0;
 }
 
-.footnotes {
-  margin: 4.5rem 0 0;
-  padding-top: 1.35rem;
-  border-top: 1px solid var(--rule-strong);
-  color: var(--muted);
-  font-size: 0.88rem;
+.footnote-trigger:hover,
+.footnote-trigger:focus-visible,
+.footnote-trigger[aria-expanded="true"] {
+  background: rgba(36, 91, 115, 0.1);
+  color: var(--link-hover);
+  outline: none;
 }
 
-.footnotes ol {
-  margin-bottom: 0;
+.footnote-trigger:focus-visible {
+  box-shadow: 0 0 0 3px rgba(36, 91, 115, 0.24);
 }
 
-.footnote-back {
-  margin-left: 0.25rem;
-  text-decoration: none;
+.footnote-popover {
+  position: absolute;
+  z-index: 10;
+  left: 50%;
+  bottom: calc(100% + 0.72rem);
+  width: min(330px, calc(100vw - 40px));
+  padding: 0.78rem 0.9rem;
+  border: 1px solid var(--rule-strong);
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(38, 43, 40, 0.16);
+  color: var(--ink);
+  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 0.35rem);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms;
+  visibility: hidden;
+}
+
+.footnote-popover::after {
+  position: absolute;
+  left: 50%;
+  bottom: -0.38rem;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-right: 1px solid var(--rule-strong);
+  border-bottom: 1px solid var(--rule-strong);
+  background: #fff;
+  content: "";
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.inline-footnote:hover .footnote-popover,
+.inline-footnote.is-open .footnote-popover {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+  visibility: visible;
 }
 
 .sr-only {
@@ -284,6 +391,41 @@ pre code {
     margin-top: 3.7rem;
   }
 
+  .curriculum-timeline {
+    grid-template-columns: 1fr;
+  }
+
+  .curriculum-stage {
+    display: grid;
+    min-height: 0;
+    padding: 0.8rem 0.9rem;
+    grid-template-columns: 72px 1fr auto;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .curriculum-stage strong {
+    margin: 0;
+  }
+
+  .footnote-popover {
+    position: fixed;
+    right: 20px;
+    bottom: 20px;
+    left: 20px;
+    width: auto;
+    transform: translateY(0.35rem);
+  }
+
+  .footnote-popover::after {
+    display: none;
+  }
+
+  .inline-footnote:hover .footnote-popover,
+  .inline-footnote.is-open .footnote-popover {
+    transform: translateY(0);
+  }
+
   .table-wrap {
     width: calc(100% + 20px);
     margin-right: -20px;
@@ -318,8 +460,42 @@ pre code {
 
   h2,
   .table-wrap,
+  .curriculum-figure,
   pre {
     break-inside: avoid;
+  }
+
+  .footnote-popover {
+    position: static;
+    display: inline;
+    padding: 0;
+    border: 0;
+    box-shadow: none;
+    font-family: inherit;
+    font-size: inherit;
+    opacity: 1;
+    pointer-events: auto;
+    transform: none;
+    visibility: visible;
+  }
+
+  .footnote-popover::before {
+    content: " (";
+  }
+
+  .footnote-popover::after {
+    position: static;
+    display: inline;
+    width: auto;
+    height: auto;
+    border: 0;
+    background: transparent;
+    content: ")";
+    transform: none;
+  }
+
+  .footnote-trigger {
+    display: none;
   }
 
   a {
