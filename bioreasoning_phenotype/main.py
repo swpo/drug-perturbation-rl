@@ -6,6 +6,7 @@ import verifiers as vf
 
 from bioreasoning_phenotype.env import load_examples, make_rubric
 from bioreasoning_phenotype.hallmarks import describe_hallmark
+from bioreasoning_phenotype.strategy_judge import build_strategy_judge_runtime
 from bioreasoning_phenotype.tools import identify_compound
 
 
@@ -19,6 +20,14 @@ def load_environment(
     tools: bool = False,
     hallmark_tools: bool = False,
     max_tool_turns: int = 5,
+    strategy_judge_mode: str = "off",
+    strategy_judge_model: str = "google/gemini-3-flash-preview",
+    strategy_judge_base_url: str = "https://api.pinference.ai/api/v1",
+    strategy_judge_api_key_var: str = "PRIME_API_KEY",
+    strategy_judge_concurrency: int = 32,
+    strategy_judge_max_tokens: int = 600,
+    strategy_judge_max_retries: int = 2,
+    strategy_judge_timeout_seconds: float = 180.0,
     **kwargs: Any,
 ) -> vf.Environment:
     """Build the small-molecule reasoning-chain env.
@@ -45,6 +54,10 @@ def load_environment(
         hallmark_tools: if True, expose `describe_hallmark(pathway)` so the
             model can look up Hallmark ontology metadata during reasoning.
         max_tool_turns: max number of tool-call rounds when any tool is enabled.
+        strategy_judge_mode: ``off``, ``shadow`` (measure only), or ``gate``
+            (multiply deterministic reward by the proof-validated v0.27 gate).
+        strategy_judge_*: locked Prime/Gemini runtime controls for the bounded
+            on-policy strategy-judge experiment. Judge failures fail open.
         kwargs: absorbed for forward-compat with test harnesses.
     """
     train_ds, eval_ds = load_examples(
@@ -54,7 +67,23 @@ def load_environment(
         num_train_examples=num_train_examples,
         num_eval_examples=num_eval_examples,
     )
-    rubric = make_rubric(weights=reward_weights)
+    if strategy_judge_mode != "off":
+        vf.ensure_keys([strategy_judge_api_key_var])
+    strategy_judge = build_strategy_judge_runtime(
+        mode=strategy_judge_mode,
+        model=strategy_judge_model,
+        base_url=strategy_judge_base_url,
+        api_key_var=strategy_judge_api_key_var,
+        concurrency=strategy_judge_concurrency,
+        max_tokens=strategy_judge_max_tokens,
+        max_retries=strategy_judge_max_retries,
+        timeout_seconds=strategy_judge_timeout_seconds,
+    )
+    rubric = make_rubric(
+        weights=reward_weights,
+        strategy_judge=strategy_judge,
+        strategy_judge_mode=strategy_judge_mode,
+    )
 
     tool_fns = []
     if tools:

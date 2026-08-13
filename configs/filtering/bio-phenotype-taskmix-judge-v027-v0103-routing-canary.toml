@@ -1,0 +1,116 @@
+# One-step current-transport canary for the reconciled v0.10.3 judge runtime.
+# This is infrastructure validation, not an experiment result.
+
+name = "bioreasoning-phenotype-taskmix-judge-v027-v0103-routing-canary"
+env_files = ["secrets.env"]
+
+model = "Qwen/Qwen3.5-0.8B"
+max_steps = 1
+batch_size = 8
+rollouts_per_example = 2
+
+[sampling]
+max_tokens = 2048
+
+[[env]]
+id = "abugoot/bioreasoning_phenotype@0.10.3"
+name = "identity_mechanism_canary"
+ratio = 0.50
+
+[env.args]
+entry_points = ["target_from_smiles", "moa_from_target"]
+num_eval_examples = 8
+tools = true
+hallmark_tools = false
+max_tool_turns = 5
+strategy_judge_mode = "shadow"
+strategy_judge_model = "google/gemini-3-flash-preview"
+strategy_judge_base_url = "https://api.pinference.ai/api/v1"
+strategy_judge_api_key_var = "PRIME_API_KEY"
+strategy_judge_concurrency = 8
+strategy_judge_max_tokens = 600
+strategy_judge_max_retries = 2
+strategy_judge_timeout_seconds = 180.0
+
+[[env]]
+id = "abugoot/bioreasoning_phenotype@0.10.3"
+name = "pathways_from_moa_canary"
+ratio = 0.25
+
+[env.args]
+entry_points = ["pathways_from_moa"]
+num_eval_examples = 8
+tools = true
+hallmark_tools = false
+max_tool_turns = 5
+strategy_judge_mode = "shadow"
+strategy_judge_model = "google/gemini-3-flash-preview"
+strategy_judge_base_url = "https://api.pinference.ai/api/v1"
+strategy_judge_api_key_var = "PRIME_API_KEY"
+strategy_judge_concurrency = 8
+strategy_judge_max_tokens = 600
+strategy_judge_max_retries = 2
+strategy_judge_timeout_seconds = 180.0
+
+[[env]]
+id = "abugoot/bioreasoning_phenotype@0.10.3"
+name = "phenotype_from_pathways_canary"
+ratio = 0.25
+
+[env.args]
+entry_points = ["phenotype_from_pathways"]
+phenotypes = ["viability", "cell_cycle", "stress"]
+num_eval_examples = 8
+tools = true
+hallmark_tools = false
+max_tool_turns = 5
+strategy_judge_mode = "shadow"
+strategy_judge_model = "google/gemini-3-flash-preview"
+strategy_judge_base_url = "https://api.pinference.ai/api/v1"
+strategy_judge_api_key_var = "PRIME_API_KEY"
+strategy_judge_concurrency = 8
+strategy_judge_max_tokens = 600
+strategy_judge_max_retries = 2
+strategy_judge_timeout_seconds = 180.0
+
+[[pre_batch_filters]]
+type = "gibberish"
+enforce = false
+token_id_threshold = 100000
+logprob_offset = 2.0
+
+[[pre_batch_filters]]
+type = "repetition"
+enforce = false
+window = 3000
+prob_threshold = 0.99
+
+[[pre_batch_filters]]
+type = "zero_advantage"
+enforce = false
+
+[[post_batch_filters]]
+type = "gibberish"
+enforce = false
+token_id_threshold = 100000
+logprob_offset = 2.0
+
+[[post_batch_filters]]
+type = "repetition"
+enforce = false
+window = 3000
+prob_threshold = 0.99
+
+[[post_batch_filters]]
+type = "zero_advantage"
+enforce = true
+
+[wandb]
+project = "bioreasoning_rl_prime"
+name = "qwen3.5-0.8b-taskmix-judge-v027-v0103-routing-canary"
+entity = "abugootlab"
+
+[val]
+num_examples = 8
+rollouts_per_example = 1
+interval = 1

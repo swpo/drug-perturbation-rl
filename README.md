@@ -37,6 +37,7 @@ revealing biological outcomes.
 ```text
 bioreasoning_phenotype/  Environment implementation and packaged data
 configs/                 Frozen hosted-training configurations
+judges/                  Frozen strategy and process judge contracts
 scripts/                 Data construction, smoke tests, and eval utilities
 docs/                    Research lineage, data provenance, and reproduction notes
 ```
@@ -56,6 +57,12 @@ uv run python scripts/smoke.py
 
 The smoke test is offline: it checks packaged data, prompt construction, tool
 behavior, and deterministic scoring without calling a model API.
+
+Judge integration checks are also offline:
+
+```bash
+uv run python scripts/check_strategy_judge_runtime.py
+```
 
 ## Evaluation
 

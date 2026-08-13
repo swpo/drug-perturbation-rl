@@ -30,6 +30,10 @@ from bioreasoning_phenotype.prompts import (
     CYCLE_CLASSES, MAGNITUDE_CLASSES, STRESS_CLASSES,
     SYSTEM_PROMPT,
 )
+from bioreasoning_phenotype.strategy_judge import (
+    STRATEGY_JUDGE_MODES,
+    StrategyJudgeRuntime,
+)
 
 DATA_PATH = Path(__file__).parent / "data" / "smallmol_chain_examples.parquet"
 
@@ -270,11 +274,21 @@ def _gt_from_answer(answer):
     return json.loads(answer) if isinstance(answer, str) else answer
 
 
-def make_rubric(weights: dict[str, float] | None = None) -> vf.Rubric:
+def make_rubric(
+    weights: dict[str, float] | None = None,
+    strategy_judge: StrategyJudgeRuntime | None = None,
+    strategy_judge_mode: str = "off",
+) -> vf.Rubric:
     """Build the chain rubric: aggregate reward + per-step metrics."""
+    if strategy_judge_mode not in STRATEGY_JUDGE_MODES:
+        raise ValueError(
+            f"strategy_judge_mode must be one of {sorted(STRATEGY_JUDGE_MODES)}"
+        )
+    if strategy_judge_mode != "off" and strategy_judge is None:
+        raise ValueError("shadow/gate strategy_judge_mode requires a judge runtime")
     w = weights or DEFAULT_REWARD_WEIGHTS
 
-    async def aggregate_reward(completion, answer, **_) -> float:
+    async def aggregate_reward(completion, answer, state, **_) -> float:
         """Weighted sum across requested chain/curriculum steps."""
         text = _last_assistant(completion)
         gt = _gt_from_answer(answer)
@@ -298,7 +312,34 @@ def make_rubric(weights: dict[str, float] | None = None) -> vf.Rubric:
             phen_gt = gt.get(_phenotype_gt_key(phenotype))
             total += w["phenotype"] * _score_phenotype(phenotype, _extract_tag(text, phen_tag), phen_gt)
             total_w += w["phenotype"]
-        return total / total_w if total_w > 0 else 0.0
+        score = total / total_w if total_w > 0 else 0.0
+        state["deterministic_reward"] = score
+        return score
+
+    async def strategy_judge_operational_gate(prompt, completion, state, **_) -> float:
+        if strategy_judge is None:
+            state["strategy_judge_operational_gate"] = 1.0
+            return 1.0
+        return await strategy_judge.evaluate(
+            prompt=prompt,
+            completion=completion,
+            state=state,
+        )
+
+    async def training_reward(state, **_) -> float:
+        deterministic = float(state.get("deterministic_reward", 0.0))
+        if strategy_judge_mode == "gate":
+            return deterministic * float(
+                state.get("strategy_judge_operational_gate", 1.0)
+            )
+        return deterministic
+
+    def _state_metric(name: str):
+        async def metric(state, **_) -> float:
+            return float(state.get(name, 0.0))
+
+        metric.__name__ = name
+        return metric
 
     async def target_f1(completion, answer, **_) -> float:
         gt = _gt_from_answer(answer)
@@ -366,7 +407,31 @@ def make_rubric(weights: dict[str, float] | None = None) -> vf.Rubric:
         return float(sum(checks)) / len(checks) if checks else 0.0
 
     rubric = vf.Rubric()
-    rubric.add_reward_func(aggregate_reward, weight=1.0)
+    # Ordering is intentional: deterministic score -> one judge call -> final
+    # training reward. Verifiers executes functions in this order while sharing
+    # the mutable rollout state.
+    rubric.add_metric(aggregate_reward)
+    if strategy_judge is not None:
+        rubric.add_metric(strategy_judge_operational_gate)
+        for metric_name in (
+            "strategy_judge_parse_success",
+            "strategy_judge_raw_invalid",
+            "strategy_judge_proof_accepted_invalid",
+            "strategy_judge_proof_rejected_invalid",
+            "strategy_judge_failure",
+            "strategy_judge_latency_seconds",
+            "strategy_judge_input_tokens",
+            "strategy_judge_output_tokens",
+            "strategy_judge_violation_shotgun_enumeration",
+            "strategy_judge_violation_tool_contradiction",
+            "strategy_judge_violation_input_substitution",
+            "strategy_judge_violation_answer_trace_contradiction",
+            "strategy_judge_violation_unsupported_final_guess",
+            "strategy_judge_violation_chain_endpoint_contradiction",
+            "strategy_judge_violation_nonresponsive_or_malformed",
+        ):
+            rubric.add_metric(_state_metric(metric_name))
+    rubric.add_reward_func(training_reward, weight=1.0)
     rubric.add_metric(target_f1)
     rubric.add_metric(moa_accuracy)
     rubric.add_metric(pathway_signed_f1)
