@@ -42,3 +42,9 @@ d37441f07b7405a061e41dbbd9c76da75e242f5cfb0a9f0d0ddc4254d57886e5  bioreasoning_p
 
 Run `uv run python scripts/smoke.py` after installation to validate the local
 snapshot without model or network calls.
+
+The root `uv.lock` intentionally resolves `verifiers==0.1.14`, matching the
+reconciled historical runtime. The published package metadata remains
+`verifiers>=0.1.14` because that is part of the immutable `0.10.4` environment
+contract; using the lock prevents a contemporary local install from silently
+substituting a newer framework.
