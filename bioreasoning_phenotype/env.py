@@ -24,6 +24,10 @@ import verifiers as vf
 from datasets import Dataset
 
 from bioreasoning_phenotype.hallmarks import hallmark_names
+from bioreasoning_phenotype.process_judge import (
+    PROCESS_JUDGE_MODES,
+    ProcessJudgeRuntime,
+)
 from bioreasoning_phenotype.prompts import (
     CYCLE_TAG, MAGNITUDE_TAG, MOA_TAG, PATHWAYS_TAG, STRESS_TAG,
     TARGET_TAG, VIABILITY_TAG,
@@ -278,6 +282,8 @@ def make_rubric(
     weights: dict[str, float] | None = None,
     strategy_judge: StrategyJudgeRuntime | None = None,
     strategy_judge_mode: str = "off",
+    process_judge: ProcessJudgeRuntime | None = None,
+    process_judge_mode: str = "off",
 ) -> vf.Rubric:
     """Build the chain rubric: aggregate reward + per-step metrics."""
     if strategy_judge_mode not in STRATEGY_JUDGE_MODES:
@@ -286,6 +292,14 @@ def make_rubric(
         )
     if strategy_judge_mode != "off" and strategy_judge is None:
         raise ValueError("shadow/gate strategy_judge_mode requires a judge runtime")
+    if process_judge_mode not in PROCESS_JUDGE_MODES:
+        raise ValueError(
+            f"process_judge_mode must be one of {sorted(PROCESS_JUDGE_MODES)}"
+        )
+    if process_judge_mode != "off" and process_judge is None:
+        raise ValueError("multiply process_judge_mode requires a judge runtime")
+    if strategy_judge_mode != "off" and process_judge_mode != "off":
+        raise ValueError("strategy_judge_mode and process_judge_mode are mutually exclusive")
     w = weights or DEFAULT_REWARD_WEIGHTS
 
     async def aggregate_reward(completion, answer, state, **_) -> float:
@@ -326,12 +340,26 @@ def make_rubric(
             state=state,
         )
 
+    async def process_judge_score(prompt, completion, info, state, **_) -> float:
+        if process_judge is None:
+            state["process_judge_score"] = 1.0
+            return 1.0
+        entry_point = str((info or {}).get("entry_point") or "")
+        return await process_judge.evaluate(
+            prompt=prompt,
+            completion=completion,
+            entry_point=entry_point,
+            state=state,
+        )
+
     async def training_reward(state, **_) -> float:
         deterministic = float(state.get("deterministic_reward", 0.0))
         if strategy_judge_mode == "gate":
             return deterministic * float(
                 state.get("strategy_judge_operational_gate", 1.0)
             )
+        if process_judge_mode == "multiply":
+            return deterministic * float(state.get("process_judge_score", 1.0))
         return deterministic
 
     def _state_metric(name: str):
@@ -431,6 +459,29 @@ def make_rubric(
             "strategy_judge_violation_nonresponsive_or_malformed",
         ):
             rubric.add_metric(_state_metric(metric_name))
+    if process_judge is not None:
+        rubric.add_metric(process_judge_score)
+        for metric_name in (
+            "process_judge_node_score",
+            "process_judge_transition_score",
+            "process_judge_parse_success",
+            "process_judge_reference_valid",
+            "process_judge_fail_open",
+            "process_judge_failure",
+            "process_judge_support_adjustments",
+            "process_judge_latency_seconds",
+            "process_judge_input_tokens",
+            "process_judge_output_tokens",
+            "process_judge_node_supported_fraction",
+            "process_judge_node_weak_fraction",
+            "process_judge_node_unsupported_fraction",
+            "process_judge_node_contradicted_fraction",
+            "process_judge_transition_coherent_fraction",
+            "process_judge_transition_weak_fraction",
+            "process_judge_transition_disconnected_fraction",
+            "process_judge_transition_contradicted_fraction",
+        ):
+            rubric.add_metric(_state_metric(metric_name))
     rubric.add_reward_func(training_reward, weight=1.0)
     rubric.add_metric(target_f1)
     rubric.add_metric(moa_accuracy)
@@ -469,6 +520,43 @@ def _build_dataset(df: pd.DataFrame) -> Dataset:
                 "phenotype": r.get("phenotype", "viability"),
             },
         })
+    return Dataset.from_list(rows)
+
+
+def load_eval_manifest(path: str | Path) -> Dataset:
+    """Load an analysis-only evaluation dataset from a JSONL manifest.
+
+    Each line must contain ``prompt`` (a Verifiers message list), ``answer``,
+    and optional ``info``.  This leaves the packaged train/eval datasets and
+    all default hosted behavior unchanged while allowing exact prompts retained
+    from an earlier run to be rescored by a fresh base-model probe.
+    """
+    manifest_path = Path(path).expanduser().resolve()
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"Evaluation manifest not found: {manifest_path}")
+
+    rows = []
+    for line_number, line in enumerate(
+        manifest_path.read_text(encoding="utf-8").splitlines(),
+        start=1,
+    ):
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        prompt = row.get("prompt")
+        answer = row.get("answer")
+        if not isinstance(prompt, list) or answer is None:
+            raise ValueError(
+                f"{manifest_path}:{line_number} requires prompt:list and answer"
+            )
+        info = row.get("info") or {}
+        if not isinstance(info, dict):
+            raise ValueError(f"{manifest_path}:{line_number} info must be an object")
+        info = {**info, "prompt_key": row.get("prompt_key")}
+        rows.append({"prompt": prompt, "answer": answer, "info": info})
+
+    if not rows:
+        raise ValueError(f"Evaluation manifest is empty: {manifest_path}")
     return Dataset.from_list(rows)
 
 

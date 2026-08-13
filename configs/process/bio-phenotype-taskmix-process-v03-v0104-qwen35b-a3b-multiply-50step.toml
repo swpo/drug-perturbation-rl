@@ -1,0 +1,119 @@
+# Single 50-step Qwen3.5-35B-A3B treatment for the frozen continuous
+# reasoning-process-v0.3 judge. The completed v0.10.3 deterministic-only
+# trajectory erijje53zsomd0aenkec5pdj is the descriptive control; it is not
+# rerun. Deterministic reward/components remain metrics, while training uses:
+#   deterministic_reward * process_judge_score
+
+name = "bioreasoning-phenotype-taskmix-process-v03-v0104-qwen35b-a3b-multiply-50step"
+env_files = ["secrets.env"]
+
+model = "Qwen/Qwen3.5-35B-A3B"
+max_steps = 50
+batch_size = 256
+rollouts_per_example = 8
+
+[sampling]
+max_tokens = 16384
+
+[[env]]
+id = "abugoot/bioreasoning_phenotype@0.10.4"
+name = "identity_mechanism_process_multiply"
+ratio = 0.50
+
+[env.args]
+entry_points = ["target_from_smiles", "moa_from_target"]
+num_eval_examples = 64
+tools = true
+hallmark_tools = false
+max_tool_turns = 5
+process_judge_mode = "multiply"
+process_judge_model = "google/gemini-3-flash-preview"
+process_judge_base_url = "https://api.pinference.ai/api/v1"
+process_judge_api_key_var = "PRIME_API_KEY"
+process_judge_concurrency = 32
+process_judge_max_tokens = 900
+process_judge_max_retries = 2
+process_judge_timeout_seconds = 180.0
+
+[[env]]
+id = "abugoot/bioreasoning_phenotype@0.10.4"
+name = "pathways_from_moa_process_multiply"
+ratio = 0.25
+
+[env.args]
+entry_points = ["pathways_from_moa"]
+num_eval_examples = 64
+tools = true
+hallmark_tools = false
+max_tool_turns = 5
+process_judge_mode = "multiply"
+process_judge_model = "google/gemini-3-flash-preview"
+process_judge_base_url = "https://api.pinference.ai/api/v1"
+process_judge_api_key_var = "PRIME_API_KEY"
+process_judge_concurrency = 32
+process_judge_max_tokens = 900
+process_judge_max_retries = 2
+process_judge_timeout_seconds = 180.0
+
+[[env]]
+id = "abugoot/bioreasoning_phenotype@0.10.4"
+name = "phenotype_from_pathways_process_multiply"
+ratio = 0.25
+
+[env.args]
+entry_points = ["phenotype_from_pathways"]
+phenotypes = ["viability", "cell_cycle", "stress"]
+num_eval_examples = 64
+tools = true
+hallmark_tools = false
+max_tool_turns = 5
+process_judge_mode = "multiply"
+process_judge_model = "google/gemini-3-flash-preview"
+process_judge_base_url = "https://api.pinference.ai/api/v1"
+process_judge_api_key_var = "PRIME_API_KEY"
+process_judge_concurrency = 32
+process_judge_max_tokens = 900
+process_judge_max_retries = 2
+process_judge_timeout_seconds = 180.0
+
+[[pre_batch_filters]]
+type = "gibberish"
+enforce = false
+token_id_threshold = 100000
+logprob_offset = 2.0
+
+[[pre_batch_filters]]
+type = "repetition"
+enforce = false
+window = 3000
+prob_threshold = 0.99
+
+[[pre_batch_filters]]
+type = "zero_advantage"
+enforce = false
+
+[[post_batch_filters]]
+type = "gibberish"
+enforce = false
+token_id_threshold = 100000
+logprob_offset = 2.0
+
+[[post_batch_filters]]
+type = "repetition"
+enforce = false
+window = 3000
+prob_threshold = 0.99
+
+[[post_batch_filters]]
+type = "zero_advantage"
+enforce = true
+
+[wandb]
+project = "bioreasoning_rl_prime"
+name = "qwen3.5-35b-a3b-taskmix-process-v03-v0104-multiply-50step"
+entity = "abugootlab"
+
+[val]
+num_examples = 64
+rollouts_per_example = 1
+interval = 5

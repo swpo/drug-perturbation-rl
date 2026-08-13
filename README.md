@@ -62,6 +62,8 @@ Judge integration checks are also offline:
 
 ```bash
 uv run python scripts/check_strategy_judge_runtime.py
+uv run python scripts/check_process_judge_runtime.py
+uv run python -m unittest discover -s tests
 ```
 
 ## Evaluation

@@ -2,7 +2,7 @@
 name = "bioreasoning_phenotype"
 description = "Multi-step pharmacology reasoning chain: predict target → MoA → pathways+direction → one phenotype (viability/cell_cycle/stress/magnitude) across the LINCS L1000 + PRISM + DRH substrate."
 tags = ["biology", "small-molecule", "lincs", "l1000", "prism", "chain-of-thought", "rl"]
-version = "0.10.3"
+version = "0.10.4"
 requires-python = ">=3.11"
 dependencies = [
     "verifiers>=0.1.14",
@@ -37,6 +37,7 @@ build-backend = "hatchling.build"
 packages = [
     "bioreasoning_phenotype",
     "judges/phenotype_strategy_judge/phenotype_strategy_judge",
+    "judges/phenotype_process_judge/phenotype_process_judge",
 ]
 
 [tool.hatch.build.force-include]
