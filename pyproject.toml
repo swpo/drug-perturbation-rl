@@ -3,6 +3,8 @@ name = "bioreasoning_phenotype"
 description = "Multi-step pharmacology reasoning chain: predict target → MoA → pathways+direction → one phenotype (viability/cell_cycle/stress/magnitude) across the LINCS L1000 + PRISM + DRH substrate."
 tags = ["biology", "small-molecule", "lincs", "l1000", "prism", "chain-of-thought", "rl"]
 version = "0.10.4"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
     "verifiers>=0.1.14",

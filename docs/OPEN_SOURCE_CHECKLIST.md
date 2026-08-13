@@ -3,7 +3,7 @@
 This repository is being assembled and reviewed locally before any public remote
 is created.
 
-- [ ] Choose and add the code license.
+- [x] Choose and add the code license.
 - [x] Confirm processed-data redistribution and required attribution.
 - [x] Review every tracked file for secrets, private URLs, and unrelated work.
 - [x] Replace or clearly label historical account-, checkpoint-, and run-specific

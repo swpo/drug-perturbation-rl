@@ -86,11 +86,11 @@ generic launch templates.
 
 The packaged examples are derived from LINCS L1000, DepMap PRISM, the Drug
 Repurposing Hub, and MSigDB Hallmark gene sets. Those data retain their source
-licenses and attribution requirements; they are not covered by the eventual
+licenses and attribution requirements; they are not covered by the
 repository code license. See [Data sources](docs/DATA_SOURCES.md).
 
-The code license is intentionally pending local review before a public remote is
-created.
+Repository code is licensed under the [Apache License 2.0](LICENSE). Packaged
+data retain their source licenses and attribution requirements.
 
 ## Reproducibility
 
