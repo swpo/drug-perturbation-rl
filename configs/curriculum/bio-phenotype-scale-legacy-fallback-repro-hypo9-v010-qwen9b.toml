@@ -1,0 +1,99 @@
+# Separately labeled Qwen3.5-9B reproduction of the historical July Hypo9 refresh.
+#
+# Phase D is required to complete cleanly through step 199 before submission.
+# This continuation uses only its exact scientific step-195 checkpoint after it
+# reaches READY; steps 195--199 are replay-only and step 200 onward is genuinely
+# new. The historical fallback sampled these three environments in proportion
+# to their natural problem counts. Zero advantage is monitored before assembly
+# but enforced only post-batch, without pre-filter refill.
+
+name = "bioreasoning-phenotype-9b-legacy-fallback-repro-hypo9"
+env_files = ["secrets.env"]
+
+model = "Qwen/Qwen3.5-9B"
+checkpoint_id = "uvwtp13yzu6ij6jing52l0qu"  # exact Phase-D step-195 checkpoint; require READY
+max_steps = 250
+batch_size = 256
+rollouts_per_example = 8
+
+[sampling]
+max_tokens = 16384
+
+[[env]]
+id = "abugoot/bioreasoning_phenotype@0.10.1"
+name = "full_chain_no_magnitude"
+ratio = 0.42475989869354797
+
+[env.args]
+entry_points = ["smiles_only"]
+phenotypes = ["viability", "cell_cycle", "stress"]
+num_eval_examples = 64
+tools = true
+hallmark_tools = false
+max_tool_turns = 5
+
+[[env]]
+id = "abugoot/bioreasoning_phenotype@0.10.1"
+name = "identity_mechanism_refresh"
+ratio = 0.287620050653226
+
+[env.args]
+entry_points = ["target_from_smiles", "moa_from_smiles"]
+num_eval_examples = 64
+tools = true
+hallmark_tools = false
+max_tool_turns = 5
+
+[[env]]
+id = "abugoot/bioreasoning_phenotype@0.10.1"
+name = "pathway_direction_refresh"
+ratio = 0.287620050653226
+
+[env.args]
+entry_points = ["pathways_from_moa", "pathways_from_smiles"]
+num_eval_examples = 64
+tools = true
+hallmark_tools = false
+max_tool_turns = 5
+
+[[pre_batch_filters]]
+type = "gibberish"
+enforce = false
+token_id_threshold = 100000
+logprob_offset = 2.0
+
+[[pre_batch_filters]]
+type = "repetition"
+enforce = false
+window = 3000
+prob_threshold = 0.99
+
+[[pre_batch_filters]]
+type = "zero_advantage"
+enforce = false
+
+[[post_batch_filters]]
+type = "gibberish"
+enforce = false
+token_id_threshold = 100000
+logprob_offset = 2.0
+
+[[post_batch_filters]]
+type = "repetition"
+enforce = false
+window = 3000
+prob_threshold = 0.99
+
+[[post_batch_filters]]
+type = "zero_advantage"
+enforce = true
+
+[wandb]
+project = "bioreasoning_rl_prime"
+name = "qwen3.5-9b-legacy-fallback-repro-hypo9-v0101"
+entity = "abugootlab"
+
+[val]
+num_examples = 64
+rollouts_per_example = 1
+interval = 5

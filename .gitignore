@@ -1,0 +1,20 @@
+.venv/
+__pycache__/
+*.pyc
+outputs/
+.prime/
+.DS_Store
+.env
+secrets.env
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+wandb/
+
+# Local experiment downloads and generated reports are not source artifacts.
+artifacts/
+reports/
