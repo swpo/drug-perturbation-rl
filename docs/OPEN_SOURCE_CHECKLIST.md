@@ -1,7 +1,6 @@
 # Open-source release checklist
 
-This repository is being assembled and reviewed locally before any public remote
-is created.
+The initial public release passed the following checks.
 
 - [x] Choose and add the code license.
 - [x] Confirm processed-data redistribution and required attribution.
@@ -13,4 +12,4 @@ is created.
 - [x] Run the complete offline test suite from a clean environment.
 - [x] Build and inspect the wheel contents.
 - [x] Confirm the repository contains no private reports or operational memory.
-- [ ] Create the GitHub repository only after the preceding checks pass.
+- [x] Create the GitHub repository only after the preceding checks pass.
