@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="An investigation of multi-step biological reasoning and reinforcement learning for drug perturbation phenotypes."
+    >
+    <title>Excursions in Biology</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="page-shell">
+      <article>
+        <header class="article-header">
+          <h1>Excursions in Biology</h1>
+        </header>
+
+        <p>
+          As AI capabilities have increased there’s been a corresponding growth in attempts to endow
+          agents and models with the right capabilities to advance science. Approaches are varied, from
+          automating the discovery process altogether
+          (<a href="https://www.futurehouse.org/news/launching-futurehouse-platform-ai-agents">Future House</a>)
+          to assisting scientists in designing and interpreting novel experiments
+          (<a href="https://research.google/blog/accelerating-scientific-breakthroughs-with-an-ai-co-scientist/">Google co-scientist</a>).
+        </p>
+
+        <p>
+          Anyone working in computational biology long enough to remember the time before language
+          models were ubiquitous might ask the following: what will the relationship between traditional
+          parametric modeling and AI look like as models continue to improve? Will agents carry out
+          experiments with massive auxiliary transformer models to predict responses to novel drugs, or
+          will those agents understand the underlying biology so well that they can reason internally about
+          such processes without the need for external models and training?
+        </p>
+
+        <p>
+          This post investigates the latter possibility. The precise setting and approach is motivated by
+          related work with Hao Zhu and the <a href="https://www.abugootlab.org/">AbuGoot lab</a>. All work was supported by
+          <a href="https://www.primeintellect.ai/">Prime Intellect</a> through their RL residency.
+        </p>
+
+        <section>
+          <h2>Specifying the problem</h2>
+
+          <p>
+            Drug perturbations, in laboratory experiments, involve introducing some amount of a drug or
+            small molecule to a controlled sample of cells. Often this is done with cell lines, which are
+            uniform samples that can be traced to a common ancestor, in an attempt to make the results
+            reproducible. After the sample has time to respond to the drug, measurements are performed.
+            Those may be coarse-grained (how many cells in the sample) or fine-grained (aggregate gene
+            expression for the sample). Since most types of measurements destroy/decompose the sample,
+            baselines must be defined via matched control populations or statistical methods (e.g.
+            comparing the results for a given drug to an average over all drugs).
+          </p>
+
+          <p>
+            Gene expression levels contain most of the information we would need to answer questions
+            about drug effects. However, the task of predicting these is devilishly challenging for a variety of
+            reasons. The measurements themselves come with numerous caveats (such as how the
+            baseline values are computed and what the precise context of the experiment was) and
+            experimental methodology/sample provenance alone can result in what looks like noise to a
+            model which does not account for those details. If any of this experimental context is not well
+            documented in the dataset being used it can be hard to separate genuine biology from
+            experimental artifacts.
+          </p>
+
+          <p>
+            Even if we could account for every aspect of the experimental procedure, we currently lack the
+            theory to predict perturbation results mechanistically. Pretraining may endow an agent with
+            certain priors, but reasoning which can consistently derive expression changes across hundreds
+            or thousands of genes would effectively be a huge step forward in the theory behind this
+            process.
+          </p>
+
+          <p>
+            For these reasons, the environment here makes the question more tractable in two ways. First,
+            we shift the task from predicting fine-grained per-gene expression changes to predicting higher
+            level observables (phenotypes). Second, we scaffold the reasoning process by requiring
+            answers to intermediate questions on the way to the final phenotype prediction. In particular, we
+            ask for
+          </p>
+
+          <ul>
+            <li>Gene/protein targets - where the drug binds</li>
+            <li>Mechanism of action (MoA) - target and binding mechanism</li>
+            <li>Genetic pathways affected</li>
+            <li>Phenotype - the overall effect of the drug on the cell sample.</li>
+          </ul>
+
+          <p>
+            Answering some of these (target genes, MoA) is a knowledge retrieval task, while others
+            (pathways and phenotype) require reasoning about the experimental outcome.
+          </p>
+
+          <p>The result is questions of the following form:</p>
+
+          <pre class="prompt-example"><code>Compound (SMILES): CNCCCN1c2ccccc2CCc2ccccc12
+Cell line: HT29
+LINCS expression assay: 10 µM, 6h treatment (used for pathway, cell-cycle, stress, and
+transcriptional-magnitude labels)
+Reason through the following steps:
+
+Step 1 — Target: Identify the primary protein target(s) this compound binds. Provide gene
+symbol(s) separated by '|'.
+Wrap your answer in &lt;TARGET&gt;...&lt;/TARGET&gt;
+
+Step 2 — MoA: State the mechanism of action of this compound in the canonical pharmacology
+phrasing (e.g. 'HDAC inhibitor', 'serotonin receptor antagonist').
+Wrap your answer in &lt;MOA&gt;...&lt;/MOA&gt;
+
+Step 3 — Pathways: Predict the top 5 Hallmark pathways most affected by treatment, each
+annotated with direction ('up' or 'down'). Use the HALLMARK_ prefix and ':direction' suffix.
+Wrap your answer in &lt;PATHWAYS&gt;HALLMARKX:up, HALLMARKY:down, ...&lt;/PATHWAYS&gt;
+
+Step 4 — Phenotype: Predict the dominant stress / death pathway activated by this compound.
+Categories:
+    • none: no significant stress pathway activation
+    • apoptosis: intrinsic apoptotic pathway activated
+    • UPR: unfolded protein response (ER stress) activated
+    • DNA_damage: DNA-repair pathway activated
+Wrap your answer in &lt;STRESS&gt;...&lt;/STRESS&gt;.</code></pre>
+
+          <p>
+            The drug itself is described by its Simplified Molecular Input Line Entry System (SMILES) string,
+            a standardized but compact description of its molecular structure. This example asks to predict
+            a stress phenotype. Phenotypes are broken down into classes and each example in the
+            environment requires predicting the outcome of a single phenotype class. Some classes (e.g.
+            cell cycle, stress) are explicit coarse grainings of the genetic expression data in the sense that
+            they derive directly from the per-gene expression levels. Others (e.g. viability) are observed
+            from the samples without directly referencing the expression data.
+          </p>
+        </section>
+
+        <section>
+          <h2>Gauging difficulty</h2>
+
+          <p>
+            We first ran evals on a range of open weights models and frontier (at the time) models to see
+            how challenging this task was. Two versions were tested: asking for the final phenotype answer
+            only, or asking for the full prediction chain across intermediate steps.
+          </p>
+
+          <div class="table-wrap">
+            <table>
+              <caption class="sr-only">Phenotype performance by model for full-chain and direct prediction</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Model</th>
+                  <th scope="col" class="numeric">Full-chain phenotype</th>
+                  <th scope="col" class="numeric">Direct phenotype</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">Qwen3.5-0.8B</th><td class="numeric">0.146</td><td class="numeric">0.214</td></tr>
+                <tr><th scope="row">Qwen3.5-2B</th><td class="numeric">0.273</td><td class="numeric">0.340</td></tr>
+                <tr><th scope="row">Qwen3.5-9B</th><td class="numeric">0.293</td><td class="numeric">0.323</td></tr>
+                <tr><th scope="row">Qwen3.5-35B-A3B</th><td class="numeric">0.261</td><td class="numeric">0.296</td></tr>
+                <tr><th scope="row">Qwen3.5-122B-A10B</th><td class="numeric">0.329</td><td class="numeric">0.416</td></tr>
+                <tr><th scope="row">Qwen3.6-35B-A3B</th><td class="numeric">0.350</td><td class="numeric">0.384</td></tr>
+                <tr><th scope="row">Qwen3.5-397B-A17B</th><td class="numeric">0.444</td><td class="numeric">0.497</td></tr>
+                <tr><th scope="row">GPT-OSS-20B</th><td class="numeric">0.437</td><td class="numeric">0.448</td></tr>
+                <tr><th scope="row">GPT-OSS-120B</th><td class="numeric">0.438</td><td class="numeric">0.469</td></tr>
+                <tr><th scope="row">DeepSeek-V3.2</th><td class="numeric">0.437</td><td class="numeric">0.447</td></tr>
+                <tr><th scope="row">GPT-5.4</th><td class="numeric">0.448</td><td class="numeric">0.477</td></tr>
+                <tr><th scope="row">Claude Sonnet 4</th><td class="numeric">0.419</td><td class="numeric">0.376</td></tr>
+                <tr><th scope="row">Gemini 3.1 Pro</th><td class="numeric">0.544</td><td class="numeric"><strong>0.610</strong></td></tr>
+                <tr><th scope="row">Claude Opus 4.7</th><td class="numeric"><strong>0.569</strong></td><td class="numeric">0.562</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            Results were roughly in line with what one would expect - performance improves with model
+            size within a fixed model family, and larger/more capable models tend to do better. The best
+            performance, unsurprisingly, is from Opus and Gemini, while open models small enough to
+            fine-tune quickly perform at roughly 50% of the SOTA level. The next thing we checked was how
+            valuable the steps we decomposed the problem into were. This was done by supplying the
+            model with the ground truth for previous steps in the chain and measuring performance on the
+            remaining steps.
+          </p>
+
+          <div class="table-wrap table-wrap-wide">
+            <table>
+              <caption class="sr-only">Phenotype performance as ground-truth intermediate reasoning steps are supplied</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Model</th>
+                  <th scope="col" class="numeric">Direct phenotype</th>
+                  <th scope="col" class="numeric">Full chain from SMILES</th>
+                  <th scope="col" class="numeric">Given target</th>
+                  <th scope="col" class="numeric">Given target + MoA</th>
+                  <th scope="col" class="numeric">Given target + MoA + pathways</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">Qwen3.5-0.8B</th><td class="numeric"><strong>0.214</strong></td><td class="numeric">0.146</td><td class="numeric">0.200</td><td class="numeric">0.158</td><td class="numeric">0.197</td></tr>
+                <tr><th scope="row">Qwen3.5-2B</th><td class="numeric">0.340</td><td class="numeric">0.273</td><td class="numeric">0.297</td><td class="numeric">0.253</td><td class="numeric"><strong>0.344</strong></td></tr>
+                <tr><th scope="row">Qwen3.5-9B</th><td class="numeric">0.323</td><td class="numeric">0.293</td><td class="numeric">0.352</td><td class="numeric">0.354</td><td class="numeric"><strong>0.420</strong></td></tr>
+                <tr><th scope="row">Qwen3.5-35B-A3B</th><td class="numeric">0.296</td><td class="numeric">0.261</td><td class="numeric">0.310</td><td class="numeric">0.344</td><td class="numeric"><strong>0.471</strong></td></tr>
+                <tr><th scope="row">Qwen3.5-122B-A10B</th><td class="numeric">0.416</td><td class="numeric">0.329</td><td class="numeric">0.429</td><td class="numeric">0.433</td><td class="numeric"><strong>0.501</strong></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>Two nice things here:</p>
+
+          <ol>
+            <li>For the larger models, the further downstream the ground truth info is the better the performance</li>
+            <li>For all but the smallest model, perfect answers to the intermediate steps improve the performance</li>
+          </ol>
+
+          <p>
+            For these reasons, we planned to use the full chain version of the problem for RL, where we
+            hoped well-crafted rewards that encouraged models to solve each step of the chain would lead
+            to improved phenotype prediction.
+          </p>
+        </section>
+
+        <section>
+          <h2>RL experiments</h2>
+
+          <p>
+            All fine-tuning for this research used flavors of reinforcement learning with verifiable rewards.
+            Part of this was pure convenience - running RL experiments on Prime’s hosted lab is extremely
+            smooth and cost-effective. Beyond this, it would also tell us how far we could lean on RL to
+            solve the problems here without thinking deeply about algorithms. While it eventually became
+            evident that there are some aspects of this problem RL on language models is likely not well
+            suited for, one takeaway from the project as a whole is that a good enough training/eval
+            framework makes it possible to learn quite a bit about a problem/environment using a fixed
+            training algorithm.
+          </p>
+
+          <p>
+            The first training run was a straightforward probe of whether the multistep problem was
+            learnable. While the results looked promising…
+          </p>
+
+          <div class="table-wrap">
+            <table>
+              <caption class="sr-only">Initial reinforcement-learning results compared with the base model</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Metric</th>
+                  <th scope="col" class="numeric">Qwen3.5-35B-A3B base (no tool)</th>
+                  <th scope="col" class="numeric">Initial RL (no lookup tool)</th>
+                  <th scope="col" class="numeric">Δ vs. base</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">Phenotype score</th><td class="numeric">0.261</td><td class="numeric"><strong>0.465</strong></td><td class="numeric">+0.204</td></tr>
+                <tr><th scope="row">Target F1</th><td class="numeric">0.029</td><td class="numeric">0.203</td><td class="numeric">+0.174</td></tr>
+                <tr><th scope="row">MoA accuracy</th><td class="numeric">0.030</td><td class="numeric">0.170</td><td class="numeric">+0.140</td></tr>
+                <tr><th scope="row">Signed pathway F1</th><td class="numeric">—</td><td class="numeric">0.058</td><td class="numeric">—</td></tr>
+                <tr><th scope="row">Aggregate reward</th><td class="numeric">0.150</td><td class="numeric">0.280</td><td class="numeric">+0.130</td></tr>
+                <tr><th scope="row">Format compliance</th><td class="numeric">0.664</td><td class="numeric">1.000</td><td class="numeric">+0.336</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            …inspecting the reasoning traces and eval stats showed that this was mostly just learning about
+            the class imbalances in the training data. The reasoning could only correctly identify the name
+            or any other defining property of the drug from the chemical description in 5% of held-out
+            examples. Compare this to Gemini 3.1, which is able to recall properties of small molecules
+            from their SMILES consistently. It’s possible that some combination of training data mix and
+            model size/capacity results in the smaller Qwen models not being able to retrieve this sort of
+            information. While it would probably be more direct to rectify this with continued pretraining or
+            SFT, we decided to build a lookup tool which models could use during RL. The thinking is that,
+            should this work, we can use the tool to construct an SFT dataset or just use something like
+            ECHO to help the model internalize the mappings the tool knows. The tool interface looks
+            something like this:
+          </p>
+
+          <pre class="tool-example"><code><span class="syntax-fn">identify_compound</span>(smiles: str) -&gt; {
+    <span class="syntax-key">"exact_match"</span>: {<span class="syntax-key">"name"</span>: <span class="syntax-string">"..."</span>} | None,        <span class="syntax-comment"># InChIKey-canonical lookup</span>
+    <span class="syntax-key">"descriptors"</span>: {MW, logP, TPSA, rings, ...}, <span class="syntax-comment"># RDKit physicochemical</span>
+    <span class="syntax-key">"scaffold"</span>: <span class="syntax-string">"..."</span>,                         <span class="syntax-comment"># Bemis–Murcko scaffold SMILES</span>
+    <span class="syntax-key">"nearest_neighbors"</span>: [                   <span class="syntax-comment"># top-5 Tanimoto similar</span>
+        {<span class="syntax-key">"name"</span>: <span class="syntax-string">"..."</span>, <span class="syntax-key">"similarity"</span>: 0.xx}, ...
+    ]
+}</code></pre>
+
+          <p>Performance using this was improved, especially in the early intermediate steps/metrics.</p>
+
+          <div class="table-wrap table-wrap-wide">
+            <table>
+              <caption class="sr-only">Tool-assisted reinforcement-learning results</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Metric</th>
+                  <th scope="col" class="numeric">Base + lookup tool (zero-shot)</th>
+                  <th scope="col" class="numeric">Initial RL (no lookup tool)</th>
+                  <th scope="col" class="numeric">Tool-assisted full-chain RL</th>
+                  <th scope="col" class="numeric">Δ vs. initial RL</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">Phenotype score</th><td class="numeric">0.340</td><td class="numeric">0.465</td><td class="numeric"><strong>0.529</strong></td><td class="numeric">+0.064</td></tr>
+                <tr><th scope="row">Target F1</th><td class="numeric">0.247</td><td class="numeric">0.203</td><td class="numeric"><strong>0.334</strong></td><td class="numeric">+0.131</td></tr>
+                <tr><th scope="row">MoA accuracy</th><td class="numeric">0.070</td><td class="numeric">0.170</td><td class="numeric"><strong>0.250</strong></td><td class="numeric">+0.080</td></tr>
+                <tr><th scope="row">Signed pathway F1</th><td class="numeric">0.096</td><td class="numeric">0.058</td><td class="numeric"><strong>0.172</strong></td><td class="numeric">+0.114</td></tr>
+                <tr><th scope="row">Aggregate reward</th><td class="numeric">0.225</td><td class="numeric">0.280</td><td class="numeric"><strong>0.369</strong></td><td class="numeric">+0.089</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            This result felt like a proof of concept for the project - plugging the retrieval hole allowed the
+            small model to learn to reason through the problem and recover performance close to some of
+            the best generalist models (at the time). As usual, the question now became how to do a little
+            better. Even just looking at the results table above, you can see that the different metrics that
+            make up the RL reward cover a range of values, for both the base model and the post-RL
+            checkpoints. It’s easy to imagine an advantage-based RL algorithm favoring larger
+            improvements in easier metrics over small improvements in more challenging ones. The metrics
+            themselves are not really comparable - beyond using different scoring functions, the different
+            intermediate steps cover a range of intrinsic difficulties. For example, some classes of
+            phenotypes (e.g. cell cycle) are multiple choice over a small set of answers while pathway
+            prediction requires both pathway identification and direction of change (still technically multiple
+            choice, but over a much larger answer set). We dug into this with small probes into each
+            intermediate step, given perfect answers to the previous ones. For example, training on the step
+            (target genes, MoA -&gt; pathway) gives the following results.
+          </p>
+
+          <div class="table-wrap table-wrap-wide">
+            <table>
+              <caption class="sr-only">Comparison of regular and pathway-focused training</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Condition</th>
+                  <th scope="col">Entry point</th>
+                  <th scope="col" class="numeric">Aggregate reward</th>
+                  <th scope="col" class="numeric">Target F1</th>
+                  <th scope="col" class="numeric">MoA accuracy</th>
+                  <th scope="col" class="numeric">Signed pathway F1</th>
+                  <th scope="col" class="numeric">Pathway name validity</th>
+                  <th scope="col" class="numeric">Pathway name F1</th>
+                  <th scope="col" class="numeric">Direction accuracy</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">Tool-assisted full-chain RL</th><td>Full chain from SMILES</td><td class="numeric">0.345</td><td class="numeric"><strong>0.312</strong></td><td class="numeric"><strong>0.230</strong></td><td class="numeric"><strong>0.174</strong></td><td class="numeric">0.848</td><td class="numeric"><strong>0.224</strong></td><td class="numeric"><strong>0.420</strong></td></tr>
+                <tr><th scope="row">Pathway-focused RL</th><td>Full chain from SMILES</td><td class="numeric">0.300</td><td class="numeric">0.255</td><td class="numeric">0.110</td><td class="numeric">0.154</td><td class="numeric">0.790</td><td class="numeric">0.200</td><td class="numeric">0.368</td></tr>
+                <tr><th scope="row">Tool-assisted full-chain RL</th><td>Given target + MoA</td><td class="numeric">0.390</td><td class="numeric">—</td><td class="numeric">—</td><td class="numeric">0.156</td><td class="numeric">0.834</td><td class="numeric">0.208</td><td class="numeric">0.380</td></tr>
+                <tr><th scope="row">Pathway-focused RL</th><td>Given target + MoA</td><td class="numeric">0.263*</td><td class="numeric">—</td><td class="numeric">—</td><td class="numeric"><strong>0.190</strong></td><td class="numeric"><strong>0.990</strong></td><td class="numeric"><strong>0.242</strong></td><td class="numeric"><strong>0.450</strong></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            The difference is not huge, but the step-specific training does boost performance on the
+            analogous eval (called “Given target + MoA” in the table) to levels above the regular training method.
+            Interestingly after training on the full chain prediction, the tool-assisted full-chain RL checkpoint actually does
+            worse when predicting from the ground truth target genes and MoA. This motivated a step-by-step
+            curriculum approach: first train to predict target genes, then MoA, then pathways, finally
+            phenotype. Since the curriculum approach would likely require more total training steps (even if
+            each stage was shorter), we also checked how the phenotype performance scaled as we train
+            further with the fixed mixed reward.
+          </p>
+
+          <div class="table-wrap table-wrap-compact">
+            <table>
+              <caption class="sr-only">Phenotype performance by number of training steps</caption>
+              <thead>
+                <tr><th scope="col">Step</th><th scope="col" class="numeric">100</th><th scope="col" class="numeric">150</th><th scope="col" class="numeric">200</th><th scope="col" class="numeric">250</th></tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">Phenotype score</th><td class="numeric">0.529</td><td class="numeric">0.518</td><td class="numeric"><strong>0.596</strong></td><td class="numeric">0.520</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            Unfortunately the performance is not monotonic in number of steps, and the peak at 200 steps may
+            be partially random chance. We can set the high-water mark at 0.55 - 0.6 for the simple RL
+            approach.
+          </p>
+
+          <p>
+            The curriculum run was posed as 40 steps for each intermediate step, followed by some final
+            refresh on the full chain task at the end. A caveat was that we continue any step that did not
+            seem to be reasonably converged in 40 steps. This ended up only happening for the first stage
+            (a mix of target gene and MoA), likely because the model needed to also learn to use the lookup
+            tool effectively. The final run spanned 4 curriculum stages and the final refresh stage.
+          </p>
+
+          <div class="table-wrap table-wrap-wide">
+            <table>
+              <caption class="sr-only">Curriculum stages and training-step ranges</caption>
+              <thead>
+                <tr><th scope="col">Stage</th><th scope="col" class="numeric">1</th><th scope="col" class="numeric">2</th><th scope="col" class="numeric">3</th><th scope="col" class="numeric">4</th><th scope="col" class="numeric">5</th></tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">Primary content</th><td>Target gene</td><td>MoA</td><td>Pathway</td><td>Phenotype</td><td>Full chain</td></tr>
+                <tr><th scope="row">Steps</th><td class="numeric">0-80</td><td class="numeric">80-120</td><td class="numeric">120-160</td><td class="numeric">160-200</td><td class="numeric">200-250</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>Results from the full curriculum run compared to the control are below.</p>
+
+          <div class="table-wrap">
+            <table>
+              <caption class="sr-only">Full curriculum results compared with control training</caption>
+              <thead>
+                <tr><th scope="col">Run (number of steps)</th><th scope="col" class="numeric">Target gene</th><th scope="col" class="numeric">MoA</th><th scope="col" class="numeric">Pathway</th><th scope="col" class="numeric">Phenotype</th></tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">Control (200)</th><td class="numeric">0.356</td><td class="numeric">0.280</td><td class="numeric">0.168</td><td class="numeric">0.596</td></tr>
+                <tr><th scope="row">Control (250)</th><td class="numeric">0.353</td><td class="numeric">0.270</td><td class="numeric">0.192</td><td class="numeric">0.520</td></tr>
+                <tr><th scope="row">Curriculum (250)</th><td class="numeric"><strong>0.379</strong></td><td class="numeric"><strong>0.320</strong></td><td class="numeric"><strong>0.206</strong></td><td class="numeric"><strong>0.635</strong></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            We see basically every step improves from the curriculum approach. Looking back to the
+            original evals, we also see this is not better than any other model tested, whether we look at
+            direct phenotype prediction or the chained reasoning.
+          </p>
+        </section>
+
+        <section>
+          <h2>Learnings from agentic research</h2>
+
+          <p>
+            If we stop here, the story looks pretty neat. With minimal scaffolding and feedback, agents can
+            build research environments which pass the smell test of initial evals (performance scales with
+            model size, frontier models generalize to the new tasks), and open models can be fine-tuned to
+            perform well on those tasks. The agents can not only run experiments, but devise new
+            hypotheses and run something I’d call accelerated rather than auto-research, since some
+            feedback still seems helpful.<sup class="footnote-ref"><a href="#footnote-1" id="footnote-ref-1" aria-label="Footnote 1">1</a></sup>
+            I found that an important part of the accelerated research loop is
+            the occasional debrief to cover any gotchas. In this case there were a couple.
+          </p>
+
+          <p>Going back to the task construction in more detail, we pulled data from two different sources.</p>
+
+          <ol>
+            <li><a href="https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE92742">LINCS L1000 Level-5</a>: gene expression signatures for small molecule perturbations</li>
+            <li><a href="https://doi.org/10.1038/s43018-019-0018-6">PRISM Repurposing 24Q2 Extended Primary</a>: viability log-fold-change measurements for small molecule perturbations</li>
+          </ol>
+
+          <p>
+            LINCS data was used to produce phenotype labels that could be derived from gene expression
+            data (e.g. cell cycle, stress). PRISM data was used to construct the viability phenotype labels.
+            Both datasets contain identifying information for each perturbation experiment, things like which
+            drug or compound is applied, which cell line it’s applied to, and protocol info like dose and time
+            to measurement. This means the two datasets can be joined, and we can ask things like “given
+            protocol X applied to drug D and cell line C, what is the effect on phenotype P?”
+          </p>
+
+          <p>
+            However, this join hides the fact that the experiments which produced the LINCS data and the
+            experiments which produced the PRISM data were done in different labs. While we normalize
+            for experiment protocol, things like sample source or finer details of the experimental procedure
+            not noted in the protocol could lead to potential differences between the samples generated by
+            each data source. This distinction is the first gotcha which I didn’t fully appreciate until I was
+            going back through the results. Not a fatal flaw by any means, but important to know if we are
+            trying to reason carefully about what the model might be learning from this training environment.
+          </p>
+
+          <p>
+            A more serious issue was one of the phenotypes constructed from the LINCS expression data.
+            Cell cycle and stress both make sense as broad phenotypes you can infer from expression
+            changes. Not only can they be defined using well-known sets of genes, but they correspond to
+            higher level properties that affect how the cell behaves/will behave in the future. The original
+            task, which was used for the training runs above, also included a phenotype called “magnitude”,
+            which just tracked overall expression change across genes. At least to a non-expert, this
+            seemed somewhat manufactured, and it was not clear what higher level property such a
+            measurement would correspond to in the cells. Worse, it seemed like magnitude was especially
+            easy for models to learn to predict through RL.
+          </p>
+
+          <p>
+            This raises the question of whether the fine-tuned models were specializing in certain
+            phenotypes or improving evenly across the three (after removing magnitude).
+          </p>
+
+          <div class="table-wrap table-wrap-compact">
+            <table>
+              <caption class="sr-only">Phenotype performance by category for curriculum and frontier models</caption>
+              <thead>
+                <tr><th scope="col">Category</th><th scope="col" class="numeric">n</th><th scope="col" class="numeric">Curriculum RL</th><th scope="col" class="numeric">Gemini 3.1 Pro</th><th scope="col" class="numeric">Claude Opus 4.7</th></tr>
+              </thead>
+              <tbody>
+                <tr><th scope="row">Viability</th><td class="numeric">102</td><td class="numeric">0.736</td><td class="numeric">0.732</td><td class="numeric"><strong>0.750</strong></td></tr>
+                <tr><th scope="row">Cell cycle</th><td class="numeric">95</td><td class="numeric"><strong>0.558</strong></td><td class="numeric">0.516</td><td class="numeric">0.495</td></tr>
+                <tr><th scope="row">Stress</th><td class="numeric">103</td><td class="numeric"><strong>0.456</strong></td><td class="numeric">0.447</td><td class="numeric">0.408</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <p>
+            We see that most of the performance gain relative to frontier models is from the
+            expression-derived phenotypes. This didn’t contradict the previous conclusions from training,
+            but it adds an asterisk to the claim that “RL boosts performance beyond frontier model levels”.
+          </p>
+
+          <p>
+            The larger lesson here is to be intentional about when you enter the agentic research loop.
+            These observations should have come when I was building the task, not after results had
+            already come in. Calibrating your level of trust in agents you work with is a crucial skill for
+            working efficiently and without errors or misunderstandings. At the rate models/harnesses
+            improve, this calibration needs to be almost continuously adapted. I imagine doing this well will
+            be one of the most important skills for scientists to develop as agent-accelerated research
+            becomes more common in every scientific field.
+          </p>
+        </section>
+
+        <section>
+          <h2>Now what?</h2>
+
+          <p>
+            There are two main directions which I find exciting at this point. The first is continuing with the
+            research hill climbing on this task. After examining different training runs, rollouts/reasoning
+            traces, and eval metrics, it is clear that the step of predicting gene/pathway perturbations given
+            perfect context about the drug (target genes, MoA, etc.) is the weakest point in the reasoning
+            chain. This is reasonable - the perturbation expression response is a complex process which is
+            probably not easy to model in human language. An example of such reasoning would be the
+            first steps to a novel biological theory of these mechanisms. A more common approach to these
+            problems is to build black-box models for perturbation response (called virtual cells) using troves
+            of experimental data. Finding ways to interpolate between those two methodologies and finding
+            the sweet spot in that spectrum would likely be interesting to both AI and biology researchers.
+          </p>
+
+          <p>
+            The second is the meta question of AI-accelerated research, at least in the domain of biology.
+            Using an analogy to computing, if we define “research complexity” as the ratio of experiment
+            design time to experiment run time, we can see where the bottleneck usually arises in these
+            types of computational biology tasks. Agents speed up experimental design and analysis
+            because they can build software quickly. However, experiment run time stays high due to
+            fundamental limits of the processes such experiments probe. This suggests that scientists in this
+            field should be optimizing workflows, not just for agentic experiment design, but also finding
+            ways to scale experiments up/down without losing control of the power of the conclusions they
+            generate. This optimization should itself be done collaboratively by humans and agents.
+          </p>
+        </section>
+
+        <aside class="footnotes" aria-label="Footnotes">
+          <ol>
+            <li id="footnote-1">
+              Most of this work was done with Claude Code (Opus 4.7/4.8) and Codex (GPT-5.5).
+              <a href="#footnote-ref-1" class="footnote-back" aria-label="Back to footnote reference">↩</a>
+            </li>
+          </ol>
+        </aside>
+
+        <section>
+          <h2>Credit</h2>
+
+          <p>
+            I am thankful to Prime Intellect for research and computing support on this project. I am grateful
+            to Sebastian for organizing this residency cohort and for project mentorship. Thanks as well to
+            Jonathan, Omar, Hao, Nic, and others in the AbuGoot lab who taught me everything I know
+            about biology.
+          </p>
+        </section>
+      </article>
+    </main>
+  </body>
+</html>
