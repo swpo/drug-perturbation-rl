@@ -11,6 +11,7 @@ uses Level 5 MODZ signatures for six core cell lines.
 
 - Data access: https://clue.io/connectopedia/pdf/lincs_cmap_data
 - GEO accession: https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE92742
+- GEO reuse terms: https://www.ncbi.nlm.nih.gov/geo/info/disclaimer.html
 - Citation: Subramanian et al., *Cell* 2017,
   https://doi.org/10.1016/j.cell.2017.10.049
 
@@ -20,6 +21,7 @@ The viability endpoint uses the PRISM Repurposing 24Q2 Extended Primary data.
 DepMap-generated public-release data are distributed under CC BY 4.0; release-
 specific terms should also be checked on the download page.
 
+- Release data and license: https://figshare.com/articles/dataset/Repurposing_Public_24Q2/25917643
 - Data portal: https://depmap.org/portal/data_page/
 - Release citation: DepMap, Broad (2024), *DepMap 24Q2 Public*
 - PRISM citation: Corsello et al., *Nature Cancer* 2020,
