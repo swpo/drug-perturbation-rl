@@ -68,7 +68,8 @@ uv run python -m unittest discover -s tests
 
 ## Evaluation
 
-Install the environment locally or use the historical Hub artifact:
+Install the environment locally or use the historical curriculum-baseline Hub
+artifact:
 
 ```bash
 uv run prime eval run abugoot/bioreasoning_phenotype@0.10.1 \
@@ -93,7 +94,9 @@ created.
 
 ## Reproducibility
 
-The initial environment snapshot corresponds to
-`abugoot/bioreasoning_phenotype@0.10.1`. File hashes and the relationship between
-the historical environment versions are documented in
+The curated Git history begins from the exact
+`abugoot/bioreasoning_phenotype@0.10.1` curriculum baseline. Later tagged
+snapshots add task-mixture filtering (`0.10.3`) and the continuous process judge
+(`0.10.4`), which is the current package version. File hashes and the
+relationship between historical environment versions are documented in
 [Reproducibility](docs/REPRODUCIBILITY.md).
