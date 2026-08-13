@@ -31,6 +31,12 @@ The process judge scores the validity and coherence of the candidate's reasoning
 trace. Its score is constrained to `[0, 1]` and multiplies, rather than replaces
 or increases, deterministic biological reward.
 
+`configs/filtering/` and `configs/process/` include the matched 50-step pilot
+recipes and independent scratch 300-step recipes. Operational continuation and
+recovery launchers are omitted: they split one scientific trajectory around
+hosted-platform checkpoint boundaries but do not define new experimental
+conditions.
+
 ## Deliberately excluded
 
 The original workspace also explored an explicit intermediate evidence bridge
