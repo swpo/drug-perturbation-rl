@@ -51,9 +51,10 @@
             uniform samples that can be traced to a common ancestor, in an attempt to make the results
             reproducible. After the sample has time to respond to the drug, measurements are performed.
             Those may be coarse-grained (how many cells in the sample) or fine-grained (aggregate gene
-            expression for the sample). Since most types of measurements destroy/decompose the sample,
-            baselines must be defined via matched control populations or statistical methods (e.g.
-            comparing the results for a given drug to an average over all drugs).
+            expression for the sample). Since most types of measurements destroy the sample, one cannot
+            simply perform before and after measurements. Instead baselines must be defined via matched
+            control populations or statistical methods (e.g. comparing the results for a given drug to an
+            average over all drugs).
           </p>
 
           <p>
@@ -76,9 +77,11 @@
           </p>
 
           <p>
-            For these reasons, the environment here makes the question more tractable in two ways. First,
-            we shift the task from predicting fine-grained per-gene expression changes to predicting higher
-            level observables (phenotypes). Second, we scaffold the reasoning process by requiring
+            Our goal was to create a training and evaluation environment using drug perturbation data,
+            utilizing agents as much as possible in the building process. Due to the difficulties above, we
+            make the following two choices which we hope make our task more tractable. First, we shift the
+            task from predicting fine-grained per-gene expression changes to predicting higher level
+            observables (phenotypes). Second, we scaffold the reasoning process by requiring
             answers to intermediate questions on the way to the final phenotype prediction. In particular, we
             ask for
           </p>
@@ -125,7 +128,7 @@ Wrap your answer in &lt;STRESS&gt;...&lt;/STRESS&gt;.</code></pre>
 
           <p>
             The drug itself is described by its Simplified Molecular Input Line Entry System (SMILES) string,
-            a standardized but compact description of its molecular structure. This example asks to predict
+            a standardized, compact description of its molecular structure. This example asks to predict
             a stress phenotype. Phenotypes are broken down into classes and each example in the
             environment requires predicting the outcome of a single phenotype class. Some classes (e.g.
             cell cycle, stress) are explicit coarse grainings of the genetic expression data in the sense that
@@ -188,19 +191,18 @@ Wrap your answer in &lt;STRESS&gt;...&lt;/STRESS&gt;.</code></pre>
               <thead>
                 <tr>
                   <th scope="col">Model</th>
-                  <th scope="col" class="numeric">Direct phenotype</th>
-                  <th scope="col" class="numeric">Full chain from SMILES</th>
+                  <th scope="col" class="numeric">Base prompt only</th>
                   <th scope="col" class="numeric">Given target</th>
                   <th scope="col" class="numeric">Given target + MoA</th>
                   <th scope="col" class="numeric">Given target + MoA + pathways</th>
                 </tr>
               </thead>
               <tbody>
-                <tr><th scope="row">Qwen3.5-0.8B</th><td class="numeric"><strong>0.214</strong></td><td class="numeric">0.146</td><td class="numeric">0.200</td><td class="numeric">0.158</td><td class="numeric">0.197</td></tr>
-                <tr><th scope="row">Qwen3.5-2B</th><td class="numeric">0.340</td><td class="numeric">0.273</td><td class="numeric">0.297</td><td class="numeric">0.253</td><td class="numeric"><strong>0.344</strong></td></tr>
-                <tr><th scope="row">Qwen3.5-9B</th><td class="numeric">0.323</td><td class="numeric">0.293</td><td class="numeric">0.352</td><td class="numeric">0.354</td><td class="numeric"><strong>0.420</strong></td></tr>
-                <tr><th scope="row">Qwen3.5-35B-A3B</th><td class="numeric">0.296</td><td class="numeric">0.261</td><td class="numeric">0.310</td><td class="numeric">0.344</td><td class="numeric"><strong>0.471</strong></td></tr>
-                <tr><th scope="row">Qwen3.5-122B-A10B</th><td class="numeric">0.416</td><td class="numeric">0.329</td><td class="numeric">0.429</td><td class="numeric">0.433</td><td class="numeric"><strong>0.501</strong></td></tr>
+                <tr><th scope="row">Qwen3.5-0.8B</th><td class="numeric">0.146</td><td class="numeric"><strong>0.200</strong></td><td class="numeric">0.158</td><td class="numeric">0.197</td></tr>
+                <tr><th scope="row">Qwen3.5-2B</th><td class="numeric">0.273</td><td class="numeric">0.297</td><td class="numeric">0.253</td><td class="numeric"><strong>0.344</strong></td></tr>
+                <tr><th scope="row">Qwen3.5-9B</th><td class="numeric">0.293</td><td class="numeric">0.352</td><td class="numeric">0.354</td><td class="numeric"><strong>0.420</strong></td></tr>
+                <tr><th scope="row">Qwen3.5-35B-A3B</th><td class="numeric">0.261</td><td class="numeric">0.310</td><td class="numeric">0.344</td><td class="numeric"><strong>0.471</strong></td></tr>
+                <tr><th scope="row">Qwen3.5-122B-A10B</th><td class="numeric">0.329</td><td class="numeric">0.429</td><td class="numeric">0.433</td><td class="numeric"><strong>0.501</strong></td></tr>
               </tbody>
             </table>
           </div>
@@ -213,9 +215,10 @@ Wrap your answer in &lt;STRESS&gt;...&lt;/STRESS&gt;.</code></pre>
           </ol>
 
           <p>
-            For these reasons, we planned to use the full chain version of the problem for RL, where we
-            hoped well-crafted rewards that encouraged models to solve each step of the chain would lead
-            to improved phenotype prediction.
+            For training, we decided to require models to provide answers to the intermediate steps. Even
+            though this led to worse baseline performance for most models, we hoped that it would give us
+            ways to track and reward the model's reasoning for each step, leading to more signal and better
+            final results.
           </p>
         </section>
 
@@ -235,7 +238,7 @@ Wrap your answer in &lt;STRESS&gt;...&lt;/STRESS&gt;.</code></pre>
 
           <p>
             The first training run was a straightforward probe of whether the multistep problem was
-            learnable. While the results looked promising…
+            learnable.
           </p>
 
           <div class="table-wrap">
@@ -244,8 +247,8 @@ Wrap your answer in &lt;STRESS&gt;...&lt;/STRESS&gt;.</code></pre>
               <thead>
                 <tr>
                   <th scope="col">Metric</th>
-                  <th scope="col" class="numeric">Qwen3.5-35B-A3B base (no tool)</th>
-                  <th scope="col" class="numeric">Initial RL (no lookup tool)</th>
+                  <th scope="col" class="numeric">Qwen3.5-35B-A3B base</th>
+                  <th scope="col" class="numeric">Initial RL</th>
                   <th scope="col" class="numeric">Δ vs. base</th>
                 </tr>
               </thead>
@@ -261,9 +264,10 @@ Wrap your answer in &lt;STRESS&gt;...&lt;/STRESS&gt;.</code></pre>
           </div>
 
           <p>
-            …inspecting the reasoning traces and eval stats showed that this was mostly just learning about
-            the class imbalances in the training data. The reasoning could only correctly identify the name
-            or any other defining property of the drug from the chemical description in 5% of held-out
+            While the results looked promising, inspecting the reasoning traces and eval stats showed that
+            this was mostly just learning about the class imbalances in the training data. The reasoning could
+            only correctly identify the name or any other defining property of the drug from the chemical
+            description in 5% of held-out
             examples. Compare this to Gemini 3.1, which is able to recall properties of small molecules
             from their SMILES consistently. It’s possible that some combination of training data mix and
             model size/capacity results in the smaller Qwen models not being able to retrieve this sort of
@@ -567,9 +571,9 @@ Wrap your answer in &lt;STRESS&gt;...&lt;/STRESS&gt;.</code></pre>
 
           <p>
             I am thankful to Prime Intellect for research and computing support on this project. I am grateful
-            to Sebastian for organizing this residency cohort and for project mentorship. Thanks as well to
-            Jonathan, Omar, Hao, Nic, and others in the AbuGoot lab who taught me everything I know
-            about biology.
+            to <a href="https://x.com/omouamoua">@omouamoua</a> for organizing this residency cohort and for project
+            mentorship along with <a href="https://x.com/jessicafeiyali">@jessicafeiyali</a>. Thanks as well to Jonathan,
+            Omar, Hao, Nic, and others in the AbuGoot lab who taught me everything I know about biology.
           </p>
         </section>
       </article>
