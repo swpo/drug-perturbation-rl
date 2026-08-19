@@ -80,7 +80,7 @@ p {
 }
 
 .reward-equation {
-  margin: 0.3rem 0 1.8rem;
+  margin: 1.45rem 0;
   padding: 1rem 1.25rem;
   overflow-x: auto;
   border-block: 1px solid var(--rule);
