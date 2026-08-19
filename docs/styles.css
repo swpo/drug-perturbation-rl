@@ -79,6 +79,21 @@ p {
   margin: 0 0 1.45rem;
 }
 
+.reward-equation {
+  margin: 0.3rem 0 1.8rem;
+  padding: 1rem 1.25rem;
+  overflow-x: auto;
+  border-block: 1px solid var(--rule);
+  color: #27312d;
+  font-size: 1.03rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.reward-equation sub {
+  font-size: 0.72em;
+}
+
 ul,
 ol {
   margin: 0 0 1.6rem 1.4rem;
